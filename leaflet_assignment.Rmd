@@ -1,0 +1,105 @@
+---
+title: "Leaflet assignment"
+author: "Naddao Thongsak"
+date: "12 March 2026"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Leaflet assignment
+
+In this report, we practice to view information in leaflet maps visualization. Leaflet is a library which can be integrated with R and be helpful to visualize data together with maps.
+This report aim to use library leaflet with choropleth map to visualize population data in 77 provinces of Thailand(data in year 2024).
+
+## Prepare population data
+### Data of Thai population of each provinces in year 2024
+Data of Thai population of each province in year 2024 was download from [Thai Official statistics registration systems](https://stat.bora.dopa.go.th/new_stat/webPage/statByYear.php).  
+
+### Clean up data
+Raw data has to be cleaned up, then selected only province name(in Thai) and population amount of each province.
+```{r}
+# Load raw data of population statistic of each province in Thailand
+thai_province_population_2024_raw <- read.csv("stat_c67.txt", sep="|")
+head(thai_province_population_2024_raw)
+
+# filter only province name(in Thai), and population data
+thai_province_population_2024 <- thai_province_population_2024_raw[, c(3,9)]
+names(thai_province_population_2024) <- c("name_th", "population")
+
+head(thai_province_population_2024)
+```
+
+### Calculation province population in percent of each province
+```{r}
+library(dplyr)
+
+# calculate total population of Thai
+total_population <- sum(thai_province_population_2024$population)
+
+# calcuate percent population of each province in Thailand
+thai_province_population_2024 <- thai_province_population_2024 %>%
+                                    mutate(percent_pop = round( (population/total_population)*100, digit=2) )
+
+```
+
+## Load maps data of all provinces boundary in GeoJSON format
+As choropleth map using boundary information in GeoJSON format, we load data of province boundary of each province in Thai for using later in map visualization.
+### Load geojson map data
+```{r}
+library(jsonlite)
+# Load GeoJSON of Thai province boundary data
+thai_provinces_geojson <- sf::read_sf("simplified_provinces_geojson.geojson")
+
+class(thai_provinces_geojson)
+names(thai_provinces_geojson)
+```
+
+### Combine province population data to GeoJSON data
+We combine Thai province population which we have been prepared with the boundary map in GeoJSON format
+```{r}
+# Combine population data to GeoJSON map data
+thai_provinces_geojson_updated <- thai_provinces_geojson %>%   
+                                      left_join(thai_province_population_2024, by= c("ADM1_TH"="name_th"))
+head(thai_provinces_geojson_updated)
+```
+
+## Render maps data in leaflet using choropleth map
+```{r}
+library(leaflet)
+
+# Define color bin using in choropleth map
+bins <- c(0, 100000, 500000, 1000000, 2500000, 5000000, Inf)
+bins <- as.numeric(bins)
+pal <- colorBin("YlOrRd", domain = thai_provinces_geojson_updated$population, bins = bins)
+
+# Define labels when mouse hover on province region
+labels <- paste(thai_provinces_geojson_updated$ADM1_EN, ":", format( thai_provinces_geojson_updated$population, big.mark=",", scientific=FALSE), " people", "(", thai_provinces_geojson_updated$percent_pop,  "%)") 
+
+# Render leaflet choropleth map
+thai_provinces_geojson_updated %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addPolygons(
+      fillColor = ~pal(population),
+      weight = 2,
+      opacity = 1,
+      color = "white",
+      dashArray = "3",
+      fillOpacity = 0.7, 
+      highlightOptions = highlightOptions(
+        weight = 5,
+        color = "#666",
+        dashArray = "",
+        fillOpacity = 0.7,
+        bringToFront = TRUE),
+      label = labels,
+      labelOptions = labelOptions (
+        style = list("font-weight" = "normal", padding = "3px 8px"),
+        textsize = "15px",
+        direction = "auto")) %>%
+  addLegend(pal = pal, values = ~population, opacity = 0.7, title = NULL,
+  position = "bottomright")
+```
